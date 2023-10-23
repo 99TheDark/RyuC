@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <math.h>
 
+// Used 
 struct string {
     int len;
     int size;
@@ -17,7 +18,7 @@ const unsigned long FLOAT_POW5_INV_SPLIT[] = {
     519229685853482763, 415383748682786211, 332306998946228969, 531691198313966350,
     425352958651173080, 340282366920938464, 544451787073501542, 435561429658801234,
     348449143727040987, 557518629963265579, 446014903970612463, 356811923176489971,
-    570899077082383953, 456719261665907162, 365375409332725730,
+    570899077082383953, 456719261665907162, 365375409332725730
 };
 
 const unsigned long FLOAT_POW5_SPLIT[] = {
@@ -34,13 +35,6 @@ const unsigned long FLOAT_POW5_SPLIT[] = {
     2117582368135750847, 1323488980084844279, 1654361225106055349, 2067951531382569187,
     1292469707114105741, 1615587133892632177, 2019483917365790221
 };
-
-void println(struct string str) {
-    for(int i = 0; i < str.size; i++) {
-        putchar(str.addr[i]);
-    }
-    putchar('\n');
-}
 
 int pow5bits(int e) {
     return e == 0 ? 1 : (int) ((e * 23219280 + 9999999) / 10000000);
@@ -320,6 +314,14 @@ struct string conv_float_string(float num) {
     } else {
         return normal_string(num, bits);
     }
+}
+
+// Demo
+void println(struct string str) {
+    for(int i = 0; i < str.size; i++) {
+        putchar(str.addr[i]);
+    }
+    putchar('\n');
 }
 
 int main() {
