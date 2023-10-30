@@ -2,17 +2,17 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
+#include <string.h>
 
-// Used 
-struct string {
+// Used
+struct utf8_string {
     int len;
-    int size;
-    char* addr;
+    int* chars;
 };
 
 const unsigned long FLOAT_POW5_INV_SPLIT[] = {
-    576460752303423489, 461168601842738791, 368934881474191033, 295147905179352826,
-    472236648286964522, 377789318629571618, 302231454903657294, 483570327845851670,
+    576460752303423489, 461168601842738791, 368934881474191033, 295147905179352826, 
+    472236648286964522, 377789318629571618, 302231454903657294, 483570327845851670, 
     386856262276681336, 309485009821345069, 495176015714152110, 396140812571321688,
     316912650057057351, 507060240091291761, 405648192073033409, 324518553658426727,
     519229685853482763, 415383748682786211, 332306998946228969, 531691198313966350,
@@ -38,15 +38,15 @@ const unsigned long FLOAT_POW5_SPLIT[] = {
 
 int pow5bits(int e) {
     return e == 0 ? 1 : (int) ((e * 23219280 + 9999999) / 10000000);
-};
+}
 
 int mulShift(int m, long factor, int shift) {
     int factor_low = (int) factor;
     int factor_high = (int) (factor >> 32);
-    
+
     long bits0 = (long) m * factor_low;
     long bits1 = (long) m * factor_high;
-    
+
     long sum = (bits0 >> 32) + bits1;
     long shiftedSum = sum >> (shift - 32);
     return (int) shiftedSum;
@@ -60,22 +60,22 @@ int mulPow5divPow2(int m, int i, int j) {
     return mulShift(m, FLOAT_POW5_SPLIT[i], j);
 }
 
-int multipleOfPow5(int x, int p) {
-    return pow5Factor(x) >= p;
-}
-
 int pow5Factor(int val) {
     int i = 0;
     while(val > 0) {
         if(val % 5 == 0) {
             return i;
         }
-        
+
         val /= 5;
         i++;
     }
     return 0;
-};
+}
+
+int multipleOfPow5(int x, int p) {
+    return pow5Factor(x) >= p;
+}
 
 int decimalLength(int val) {
     int len = 10;
@@ -87,12 +87,18 @@ int decimalLength(int val) {
         factor /= 10;
     }
     return len;
-};
+}
 
-struct string normal_string(float num, unsigned int bits) {
+const int strNaN[] = { 110, 97, 110 };
+const int strPosInf[] = { 105, 110, 102 };
+const int strNegInf[] = { 45, 105, 110, 102 };
+const int strPosZero[] = { 48, 46, 48 };
+const int strNegZero[] = { 45, 48, 46, 48 };
+
+struct utf8_string normalString(float num, unsigned int bits) {
     int exponent = (bits & 2139095040) >> 23;
     int mantissa = bits & 8388607;
-    
+
     int e2;
     int m2;
     if(exponent == 0) {
@@ -102,12 +108,12 @@ struct string normal_string(float num, unsigned int bits) {
         e2 = exponent - 150;
         m2 = mantissa | 8388608;
     }
-    
+
     int mv = 4 * m2;
     int mp = 4 * m2 + 2;
     int mm = 4 * m2 - (m2 != 8388608 || exponent <= 1 ? 2 : 1);
     e2 -= 2;
-    
+
     int dp, dv, dm;
     int e10;
     bool dp_itz, dv_itz, dm_itz;
@@ -116,114 +122,114 @@ struct string normal_string(float num, unsigned int bits) {
         int q = (int) (e2 * 0.3010299);
         int k = 58 + pow5bits(q);
         int i = q + k - e2;
-        
+
         dv = (int) mulPow5InvDivPow2(mv, q, i);
         dp = (int) mulPow5InvDivPow2(mp, q, i);
         dm = (int) mulPow5InvDivPow2(mm, q, i);
-        
+
         if(q != 0 && ((dp - 1) / 10 <= dm / 10)) {
             int l = 58 + pow5bits(q - 1);
             lastRemDigit = mulPow5InvDivPow2(mv, q - 1, q - e2 - 1 + l) % 10;
         }
         e10 = q;
-        
+
         dp_itz = multipleOfPow5(mp, q);
         dv_itz = multipleOfPow5(mv, q);
         dm_itz = multipleOfPow5(mm, q);
     } else {
         int q = (int) (e2 * -0.69897);
-        int i = - e2 - q;
+        int i = -e2 - q;
         int k = pow5bits(i) - 61;
         int j = q - k;
-        
+
         dv = (int) mulPow5divPow2(mv, i, j);
         dp = (int) mulPow5divPow2(mp, i, j);
         dm = (int) mulPow5divPow2(mm, i, j);
-        
-        if (q != 0 && ((dp - 1) / 10 <= dm / 10)) {
+
+        if(q != 0 && ((dp - 1) / 10 <= dm / 10)) {
             j = q - pow5bits(i + 1) + 60;
             lastRemDigit = mulPow5divPow2(mv, i + 1, j) % 10;
         }
         e10 = q + e2;
-        
+
         dp_itz = 1 >= q;
         dv_itz = (q < 23) && (mv & ((1 << (q - 1)) - 1)) == 0;
         dm_itz = (mm % 2 != 1 ? 1 : 0) >= q;
     }
-    
+
     int dpLen = decimalLength(dp);
     int expon = e10 + dpLen - 1;
-    
+
     bool sciNot = !((expon >= -3) && (expon < 7));
-    
+
     int removed = 0;
     if(dp_itz) {
         dp--;
     }
-    
+
     while(dp / 10 > dm / 10) {
         if(dp < 100 && sciNot) {
             break;
         }
-        
+
         dm_itz &= dm % 10 == 0;
         dp /= 10;
-        
+
         lastRemDigit = dv % 10;
         dv /= 10;
         dm /= 10;
-        
+
         removed++;
     }
-    
-    if (dm_itz) {
+
+    if(dm_itz) {
         while(dm % 10 == 0) {
             if (dp < 100 && sciNot) {
                 break;
             }
-            
+
             dp /= 10;
             lastRemDigit = dv % 10;
-            
+
             dv /= 10;
             dm /= 10;
-            
+
             removed++;
         }
     }
-    
-    if (dv_itz && lastRemDigit == 5 && dv % 2 == 0) {
+
+    if(dv_itz && lastRemDigit == 5 && dv % 2 == 0) {
         lastRemDigit = 4;
     }
-    
+
     int output = dv + ((dv == dm && !dm_itz) || (lastRemDigit >= 5) ? 1 : 0);
     int outLen = dpLen - removed;
     
-    char* result = malloc(15);
+    int* result = (int*) malloc(15 * sizeof(int));
     int idx = 0;
     if(num < 0) {
-        result[idx++] = '-';
+        result[idx++] = 45;
     }
-    
-    struct string str;
+
+    struct utf8_string str;
     if(sciNot) {
         for(int i = 0; i < outLen - 1; i++) {
             int c = output % 10;
             output /= 10;
-            
-            result[(idx + outLen - i) * sizeof(char)] = 48 + c;
+
+            result[idx + outLen - i] = 48 + c;
         }
         result[idx] = 48 + output % 10;
-        result[++idx] = '.';
-        
+        result[++idx] = 46;
+
         idx += outLen;
         if(outLen == 1) {
-            result[idx++] = '0';
+            result[idx++] = 48;
         }
-        
-        result[idx++] = 'e';
+
+        result[idx++] = 101;
         if(expon < 0) {
-            result[idx++] = '-';
+            result[idx++] = 45;
             expon = -expon;
         }
         if(expon >= 10) {
@@ -232,12 +238,12 @@ struct string normal_string(float num, unsigned int bits) {
         result[idx++] = 48 + expon % 10;
     } else {
         if(expon < 0) {
-            result[idx++] = '0';
-            result[idx++] = '.';
+            result[idx++] = 48;
+            result[idx++] = 47;
             for(int i = -1; i > expon; i--) {
-                result[idx++] = '0';
+                result[idx++] = 48;
             }
-            
+
             int cur = idx;
             for(int i = 0; i < outLen; i++) {
                 result[cur + outLen - i - 1] = 48 + output % 10;
@@ -250,17 +256,17 @@ struct string normal_string(float num, unsigned int bits) {
                 output /= 10;
             }
             idx += outLen;
-            
+
             for(int i = outLen; i < expon + 1; i++) {
-                result[idx++] = '0';
+                result[idx++] = 48;
             }
-            result[idx++] = '.';
-            result[idx++] = '0';
+            result[idx++] = 46;
+            result[idx++] = 48;
         } else {
             int cur = idx + 1;
             for(int i = 0; i < outLen; i++) {
                 if(outLen - i - 1 == expon) {
-                    result[cur + outLen - i - 1] = '.';
+                    result[cur + outLen - i - 1] = 46;
                     cur--;
                 }
                 result[cur + outLen - i - 1] = 48 + output % 10;
@@ -269,63 +275,86 @@ struct string normal_string(float num, unsigned int bits) {
             idx += outLen + 1;
         }
     }
-    
+
     str.len = idx;
-    str.size = idx;
-    str.addr = malloc(idx);
+    str.chars = (int*) malloc(idx * sizeof(int));
     
-    memcpy(str.addr, result, idx * sizeof(char));
+    memcpy(str.chars, result, idx * sizeof(int));
     free(result);
-    
+
     return str;
 }
 
-struct string conv_float_string(float num) {
-    unsigned int bits = ((union { float f; unsigned int i; }){ num }).i;
-    
-    struct string str;
+struct utf8_string float2String(float num) {
+    unsigned int bits = ((union {float f; unsigned int i;}) {num}).i;
+
+    struct utf8_string str;
     if(num != num) {
         str.len = 3;
-        str.size = 3;
-        str.addr = "nan";
+        str.chars = (int*) strNaN;
         return str;
     } else if(num == INFINITY) {
         str.len = 3;
-        str.size = 3;
-        str.addr = "inf";
+        str.chars = (int*) strPosInf;
         return str;
     } else if(num == -INFINITY) {
         str.len = 4;
-        str.size = 4;
-        str.addr = "-inf";
+        str.chars = (int*) strNegInf;
         return str;
     } else if(num == 0) {
         int sign = bits >> 31;
         if(sign == 0) {
             str.len = 3;
-            str.size = 3;
-            str.addr = "0.0";
+            str.chars = (int*) strPosZero;
         } else {
             str.len = 4;
-            str.size = 4;
-            str.addr = "-0.0";
+            str.chars = (int*) strNegZero;
         }
         return str;
     } else {
-        return normal_string(num, bits);
+        return normalString(num, bits);
     }
 }
 
 // Demo
-void println(struct string str) {
-    for(int i = 0; i < str.size; i++) {
-        putchar(str.addr[i]);
+const int byteLead = 0x80;
+const int byteMask = 0x3F;
+
+const int byte2Lead = 0xC0;
+const int byte3Lead = 0xE0;
+const int byte4Lead = 0xF0;
+
+const int byteMax = (1 << 7) - 1;
+const int byte2Max = (1 << 11) - 1;
+const int byte3Max = (1 << 16) - 1;
+
+void printChar(int cp) {
+    if(cp <= byteMax) {
+        putchar(cp);
+    } else if(cp <= byte2Max) {
+        putchar(byte2Lead | cp >> 6);
+        putchar(byteLead | cp & byteMask);
+    } else if(cp <= byte3Max) {
+        putchar(byte3Lead | cp >> 12);
+        putchar(byteLead | cp >> 6 & byteMask);
+        putchar(byteLead | cp & byteMask);
+    } else {
+        putchar(byte4Lead | cp >> 18);
+        putchar(byteLead | cp >> 12 & byteMask);
+        putchar(byteLead | cp >> 6 & byteMask);
+        putchar(byteLead | cp & byteMask);
+    }
+}
+
+void println(struct utf8_string str) {
+    for(int i = 0; i < str.len; i++) {
+        printChar(str.chars[i]);
     }
     putchar('\n');
 }
 
 int main() {
-    struct string str = conv_float_string(-0.0000030439580234021423);
+    struct utf8_string str = float2String(-24.28512f);
     println(str);
 
     return 0;
